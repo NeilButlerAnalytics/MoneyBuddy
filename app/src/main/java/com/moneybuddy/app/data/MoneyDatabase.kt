@@ -21,6 +21,16 @@ interface TransactionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun update(transaction: Transaction)
 
+    // Imports must never overwrite a category or note the user has already edited.
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnoring(transactions: List<Transaction>): List<Long>
+
+    @Query("DELETE FROM transactions WHERE isDemo = 1")
+    suspend fun deleteDemo()
+
+    @Query("DELETE FROM transactions")
+    suspend fun deleteAll()
+
     @Query("SELECT COUNT(*) FROM transactions")
     suspend fun count(): Int
 }

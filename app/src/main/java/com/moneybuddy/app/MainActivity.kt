@@ -30,7 +30,10 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background,
                 ) {
                     val financeViewModel: MoneyBuddyViewModel = viewModel(
-                        factory = MoneyBuddyViewModelFactory(database.transactionDao()),
+                        factory = MoneyBuddyViewModelFactory(
+                            database.transactionDao(),
+                            getPreferences(MODE_PRIVATE),
+                        ),
                     )
                     MoneyBuddyApp(
                         viewModel = financeViewModel,

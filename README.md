@@ -17,6 +17,9 @@ Set-Location C:\MoneyBuddy
 
 Connect the tablet with USB debugging enabled and accept the Android debugging prompt.
 
+Stage 3 adds a free **bank CSV import** (Settings → Import bank CSV). Live bank
+connections are not yet available: see STAGE3-OPEN-BANKING.md.
+
 ## Stage 1 scope
 
 - Tablet dashboard with persistent navigation

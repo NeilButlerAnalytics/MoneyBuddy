@@ -2,6 +2,26 @@
 
 Last updated: 31 October 2026
 
+## Update: Monzo has a developer API
+
+Monzo publishes an OAuth 2.0 developer API (https://docs.monzo.com/) with
+accounts, balance, pots and transactions endpoints, created from
+https://developers.monzo.com. The documentation does not state a price or any
+charge, but I could not confirm that it is free. Confirmed from the documentation:
+
+- A Monzo client is created in the developer tools; no payment is mentioned.
+- Confidential clients (server-side secret) receive refresh tokens; public
+  clients do not and must re-authenticate when the token expires (about 6
+  hours).
+- Transactions include `amount`, `description`, `merchant`, `category`, `notes`
+  and `settled`.
+
+Not confirmed from the pages I could read: Monzo's restriction on transaction
+history after the first few minutes of authorisation (I recall 90 days), and
+whether the developer API terms limit it to personal use. Check the developer
+portal before relying on either. This only helps if you hold a Monzo account;
+it does not provide HSBC data.
+
 ## Update: Enable Banking does not cover the UK
 
 Enable Banking's official market list (https://enablebanking.com/docs/markets/)

@@ -133,6 +133,35 @@ Android app must remain read-only and must never handle HSBC passwords.
 No live provider code has been added yet because the provider account terms and
 eligibility still need confirmation.
 
+## Stage 3 — bank statement import (replaces the live Enable Banking plan)
+
+**Status: Implemented and unit tested; tablet install pending reconnection**
+
+Enable Banking does not cover the UK, so Stage 3 now starts with importing a CSV
+downloaded from HSBC online banking. This is free and needs no hosting.
+
+- Settings → **Import bank CSV** opens the Android file picker.
+- Recognises HSBC-style `Date, Type, Description, Paid out, Paid in, Balance`,
+  `Date, Description, Amount` (with or without a header) and Monzo-style exports.
+  The exact HSBC UK column layout has not been confirmed against a real file, so
+  the first real import is the test.
+- Re-importing an overlapping file never duplicates transactions and never
+  overwrites categories or notes you have edited.
+- The latest balance in the file is shown on the dashboard.
+- The first import removes the demo data.
+- The dashboard now summarises the most recent month in the data instead of all
+  transactions.
+- Settings → **Delete all local transactions** (with confirmation) satisfies the
+  requirement to delete local financial data. Demo data is not re-seeded.
+- Imported files are read in memory only, are never uploaded, and nothing from
+  them is logged.
+- A synthetic test file is in [samples/sample-statement.csv](./samples/sample-statement.csv).
+- Light theme fix: balance and spending amounts were hard-coded white.
+
+Still open: a live connection (needs a UK-capable provider, see
+[STAGE3-OPEN-BANKING.md](./STAGE3-OPEN-BANKING.md)), connection status and last
+sync display, and a Monzo option.
+
 ## Next checkpoint
 
 The next action is to use Enable Banking's Control Panel to confirm HSBC UK
