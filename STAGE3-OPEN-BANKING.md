@@ -163,3 +163,18 @@ restricted production application, link the intended personal account only if
 the displayed terms and cost are acceptable, and review the consent scope.
 If HSBC UK is unavailable or a fee is required, evaluate GoCardless Bank
 Account Data next rather than adding provider-specific Android code prematurely.
+
+## Cloudflare Worker
+
+A Cloudflare Worker has been created at:
+
+`https://moneybuddy-api.neil-butler-1981.workers.dev/`
+
+The Worker source is under [worker/](./worker). It is designed to replace the
+local callback with this public HTTPS callback:
+
+`https://moneybuddy-api.neil-butler-1981.workers.dev/enablebanking/callback`
+
+The Worker has not been configured with Production secrets yet. The Production
+private key must be added through Cloudflare encrypted Worker secrets and must
+not be committed to this repository.

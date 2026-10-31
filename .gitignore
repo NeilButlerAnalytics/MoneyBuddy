@@ -11,3 +11,4 @@ build/
 **/build/
 .gradle/
 .kotlin/
+worker/node_modules/

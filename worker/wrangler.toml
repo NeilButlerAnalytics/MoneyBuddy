@@ -1,0 +1,4 @@
+name = "moneybuddy-api"
+main = "src/index.ts"
+compatibility_date = "2026-10-31"
+workers_dev = true
