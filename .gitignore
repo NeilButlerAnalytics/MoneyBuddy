@@ -1,0 +1,13 @@
+# Enable Banking private keys and other local secrets.
+secret/
+*.pem
+*.key
+.env
+.env.*
+connector/config.json
+local.properties
+**/__pycache__/
+build/
+**/build/
+.gradle/
+.kotlin/

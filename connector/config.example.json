@@ -1,0 +1,6 @@
+{
+  "application_id": "023f6c23-1c2e-4fe0-b377-56bf26f4c8e9",
+  "private_key_path": "C:\\MoneyBuddy\\secret\\023f6c23-1c2e-4fe0-b377-56bf26f4c8e9.pem",
+  "redirect_url": "http://localhost:8080/enablebanking/callback",
+  "api_base_url": "https://api.enablebanking.com"
+}
