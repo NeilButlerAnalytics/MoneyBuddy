@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity() {
                     val financeViewModel: MoneyBuddyViewModel = viewModel(
                         factory = MoneyBuddyViewModelFactory(
                             database.transactionDao(),
+                            database.categoryDao(),
                             getPreferences(MODE_PRIVATE),
                         ),
                     )

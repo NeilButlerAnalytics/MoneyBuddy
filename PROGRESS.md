@@ -192,6 +192,39 @@ HSBC MiData export (`Date, Type, Merchant/Description, Debit/Credit, Balance`):
   so every imported spend is "Other" until Stage 4 (automatic categorisation).
   Own-account transfers (`TFR`) also count as spending and income until Stage 4.
 
+## Spending periods and editable categories (31 October 2026)
+
+**Status: Implemented and installed on the tablet; awaiting review**
+
+Spending chart period (saved between launches):
+
+- **Week**: last 7 days, or this week so far (Monday to today).
+- **Month**: last 30 days, or this month so far (the 1st to today).
+- **Custom range**: a date-range picker.
+- The chart, legend and transaction lists recalculate as soon as a choice is made.
+- If the period has no spending the card says so, shows the date of your latest
+  transaction and offers one tap to the month that has data. This matters when
+  a bank export is a few weeks old.
+- The three summary cards above the chart still show the latest month in the
+  data; they do not follow the chart's period.
+
+Categories (Settings, Categories):
+
+- Add, rename, recolour and delete. Stored in the database (version 3); the
+  default list is created on the first launch after upgrading.
+- Renaming updates every transaction in the category.
+- Deleting moves its transactions to "Other", after a confirmation that says
+  how many.
+- "Other" cannot be renamed or deleted. "Income" is reserved for money in.
+  Names are checked for duplicates ignoring case.
+- The transaction editor, the Transactions filter and the chart colours all use
+  the edited list.
+- Verified on the tablet: the period selector, the date picker, adding and
+  deleting a category, and that "Other" stays last. Renaming a category that
+  already has transactions, and deleting one that has, are covered by the
+  database logic and unit-tested name rules but were not exercised on the
+  tablet.
+
 ## Next checkpoint
 
 The next action is to use Enable Banking's Control Panel to confirm HSBC UK

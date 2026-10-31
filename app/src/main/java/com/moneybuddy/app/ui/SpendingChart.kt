@@ -39,6 +39,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -74,9 +75,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.util.lerp
-import com.moneybuddy.app.data.MonthSummary
+import com.moneybuddy.app.data.Category
+import com.moneybuddy.app.data.PeriodGrain
+import com.moneybuddy.app.data.PeriodSpending
+import com.moneybuddy.app.data.SpendingPeriod
 import com.moneybuddy.app.data.Transaction
+import com.moneybuddy.app.data.fallbackCategoryColor
+import com.moneybuddy.app.data.formatDay
+import com.moneybuddy.app.data.formatRange
 import com.moneybuddy.app.data.paymentTypeLabel
+import com.moneybuddy.app.data.wholeMonthOf
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -106,26 +114,19 @@ private class BoundsHolder {
     var coordinates: LayoutCoordinates? = null
 }
 
-private val categoryPalette = listOf(
-    Color(0xFFF28C28), Color(0xFF39B978), Color(0xFF5B8DEF), Color(0xFFE5989B), Color(0xFF6BCBCA),
-    Color(0xFFB388EB), Color(0xFFF2C14E), Color(0xFFE56B6F), Color(0xFF8FBF5A), Color(0xFF4FB0C6),
-    Color(0xFFD98E73), Color(0xFF9AA5B1), Color(0xFFC77DBB),
-)
-
-internal fun categoryColor(category: String): Color {
-    val known = transactionCategories.indexOf(category)
-    val index = if (known >= 0) known else (category.hashCode() and Int.MAX_VALUE)
-    return categoryPalette[index % categoryPalette.size]
+internal fun categoryColor(category: String, categories: List<Category>): Color {
+    val match = categories.firstOrNull { it.name == category }
+    return Color(match?.colorArgb ?: fallbackCategoryColor(category))
 }
 
-internal fun buildSlices(transactions: List<Transaction>): List<ChartSlice> =
+internal fun buildSlices(transactions: List<Transaction>, categories: List<Category>): List<ChartSlice> =
     transactions.filter { it.amountPence < 0 }
         .groupBy { it.category }
         .map { (category, list) ->
             ChartSlice(
                 category = category,
                 totalPence = list.sumOf { -it.amountPence },
-                color = categoryColor(category),
+                color = categoryColor(category, categories),
                 transactions = list.sortedByDescending { it.date },
             )
         }
@@ -257,12 +258,14 @@ private fun DonutChart(
 
 @Composable
 internal fun SpendingCard(
-    summary: MonthSummary,
+    spending: PeriodSpending,
+    categories: List<Category>,
     hidden: Boolean,
     onOpen: (ChartRequest) -> Unit,
+    onPeriodChange: (SpendingPeriod) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val slices = remember(summary.transactions) { buildSlices(summary.transactions) }
+    val slices = remember(spending.transactions, categories) { buildSlices(spending.transactions, categories) }
     val total = slices.sumOf { it.totalPence }
     val holder = remember { BoundsHolder() }
 
@@ -277,11 +280,16 @@ internal fun SpendingCard(
             Column {
                 Text("Spending breakdown", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
-                    if (slices.isEmpty()) "No spending this month" else "Tap a section to see its transactions",
+                    if (slices.isEmpty()) "No spending in this period" else "Tap a section to see its transactions",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (slices.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                PeriodSelector(spending.period, spending.range, onPeriodChange)
+                if (slices.isEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    EmptyPeriodMessage(spending, onPeriodChange)
+                } else {
                     Spacer(Modifier.height(12.dp))
                     val chart: @Composable () -> Unit = {
                         DonutChart(
@@ -331,6 +339,36 @@ internal fun SpendingCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun EmptyPeriodMessage(spending: PeriodSpending, onPeriodChange: (SpendingPeriod) -> Unit) {
+    val latest = spending.latestTransactionDate
+    val month = latest?.let { wholeMonthOf(it) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "There is no spending between ${formatRange(spending.range)}.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        // Bank exports are often a few weeks old, so offer the way to the data that is there.
+        if (latest != null && month != null && latest < spending.range.start.toString()) {
+            Text(
+                "Your latest transaction is on ${formatDay(latest)}.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = {
+                    onPeriodChange(
+                        spending.period.copy(
+                            grain = PeriodGrain.CUSTOM,
+                            customStart = month.start,
+                            customEnd = month.end,
+                        ),
+                    )
+                },
+            ) { Text("Show ${formatRange(month)}") }
         }
     }
 }

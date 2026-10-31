@@ -3,7 +3,9 @@ package com.moneybuddy.app.ui
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import com.moneybuddy.app.data.Category
 import com.moneybuddy.app.data.Transaction
+import com.moneybuddy.app.data.defaultCategories
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -55,6 +57,7 @@ class SpendingChartTest {
                 Transaction("3", "Mortgage", "2026-10-02", "Mortgage / Rent", -90000),
                 Transaction("4", "Salary", "2026-10-03", "Income", 285000),
             ),
+            defaultCategories,
         )
 
         assertEquals(listOf("Mortgage / Rent", "Shopping"), slices.map { it.category })
@@ -63,8 +66,15 @@ class SpendingChartTest {
     }
 
     @Test
-    fun sameCategoryAlwaysGetsTheSameColour() {
-        assertEquals(categoryColor("Groceries"), categoryColor("Groceries"))
-        assertEquals(categoryColor("Imported thing"), categoryColor("Imported thing"))
+    fun aSliceUsesTheColourChosenForItsCategory() {
+        val categories = listOf(Category("Pets", 0xFF112233))
+        val slices = buildSlices(listOf(Transaction("1", "Vet", "2026-10-01", "Pets", -500)), categories)
+
+        assertEquals(Color(0xFF112233), slices.single().color)
+    }
+
+    @Test
+    fun aCategoryMissingFromTheListStillGetsAStableColour() {
+        assertEquals(categoryColor("Imported thing", emptyList()), categoryColor("Imported thing", emptyList()))
     }
 }

@@ -67,22 +67,32 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.moneybuddy.app.data.Category
+import com.moneybuddy.app.data.CategoryDao
 import com.moneybuddy.app.data.CsvFormatException
 import com.moneybuddy.app.data.MonthSummary
+import com.moneybuddy.app.data.OTHER_CATEGORY
 import com.moneybuddy.app.data.ParsedStatement
+import com.moneybuddy.app.data.PeriodGrain
+import com.moneybuddy.app.data.PeriodSpending
+import com.moneybuddy.app.data.SpendingPeriod
 import com.moneybuddy.app.data.Transaction
 import com.moneybuddy.app.data.TransactionDao
+import com.moneybuddy.app.data.defaultCategories
 import com.moneybuddy.app.data.demoTransactions
 import com.moneybuddy.app.data.parseBankCsv
 import com.moneybuddy.app.data.paymentTypeLabel
 import com.moneybuddy.app.data.summariseLatestMonth
+import com.moneybuddy.app.data.validateCategoryName
 import java.text.NumberFormat
+import java.time.LocalDate
 import java.util.Locale
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -92,17 +102,34 @@ private val Orange = Color(0xFFF28C28)
 private val Green = Color(0xFF39B978)
 private val Red = Color(0xFFE56B6F)
 
-internal val transactionCategories = listOf(
-    "Groceries", "Shopping", "Fuel", "Transport", "Utilities", "Mortgage / Rent",
-    "Insurance", "Eating out", "Entertainment", "Subscriptions", "Family", "Holidays", "Other",
-)
-
 class MoneyBuddyViewModel(
     private val dao: TransactionDao,
+    private val categoryDao: CategoryDao,
     private val prefs: SharedPreferences,
 ) : ViewModel() {
     val transactions: StateFlow<List<Transaction>> = dao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val categories: StateFlow<List<Category>> = categoryDao.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _period = MutableStateFlow(readPeriod())
+    val period: StateFlow<SpendingPeriod> = _period
+
+    /** The transactions inside the chosen period. It recalculates whenever the period or the data changes. */
+    val spending: StateFlow<PeriodSpending> = combine(transactions, _period) { all, period ->
+        val range = period.range(LocalDate.now())
+        PeriodSpending(
+            period = period,
+            range = range,
+            transactions = all.filter { range.contains(it.date) },
+            latestTransactionDate = all.maxOfOrNull { it.date },
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        PeriodSpending(_period.value, _period.value.range(LocalDate.now()), emptyList(), null),
+    )
 
     private val _importMessage = MutableStateFlow<String?>(null)
     val importMessage: StateFlow<String?> = _importMessage
@@ -117,6 +144,11 @@ class MoneyBuddyViewModel(
                 if (dao.count() == 0) dao.insertAll(demoTransactions)
                 prefs.edit().putBoolean(KEY_DEMO_SEEDED, true).apply()
             }
+            // Likewise the default categories, so a category the user deletes does not come back.
+            if (!prefs.getBoolean(KEY_CATEGORIES_SEEDED, false)) {
+                if (categoryDao.count() == 0) categoryDao.insertAll(defaultCategories)
+                prefs.edit().putBoolean(KEY_CATEGORIES_SEEDED, true).apply()
+            }
         }
     }
 
@@ -125,6 +157,38 @@ class MoneyBuddyViewModel(
 
     fun updateTransaction(transaction: Transaction) {
         viewModelScope.launch { dao.update(transaction) }
+    }
+
+    fun setPeriod(period: SpendingPeriod) {
+        _period.value = period
+        prefs.edit()
+            .putString(KEY_PERIOD_GRAIN, period.grain.name)
+            .putBoolean(KEY_PERIOD_ROLLING, period.rolling)
+            .putString(KEY_PERIOD_START, period.customStart?.toString())
+            .putString(KEY_PERIOD_END, period.customEnd?.toString())
+            .apply()
+    }
+
+    /** Adds a category when [original] is null, otherwise edits it. Returns a message if the name cannot be used. */
+    fun saveCategory(original: String?, rawName: String, colorArgb: Long): String? {
+        val name = rawName.trim()
+        validateCategoryName(name, original, categories.value.map { it.name })?.let { return it }
+        viewModelScope.launch {
+            if (original == null) categoryDao.insert(Category(name, colorArgb)) else categoryDao.edit(original, name, colorArgb)
+        }
+        return null
+    }
+
+    fun deleteCategory(name: String) {
+        if (name == OTHER_CATEGORY) return
+        viewModelScope.launch { categoryDao.deleteAndReassign(name, OTHER_CATEGORY) }
+    }
+
+    private fun readPeriod(): SpendingPeriod {
+        val grain = runCatching { PeriodGrain.valueOf(prefs.getString(KEY_PERIOD_GRAIN, null) ?: "") }
+            .getOrDefault(PeriodGrain.MONTH)
+        fun date(key: String) = prefs.getString(key, null)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        return SpendingPeriod(grain, prefs.getBoolean(KEY_PERIOD_ROLLING, false), date(KEY_PERIOD_START), date(KEY_PERIOD_END))
     }
 
     fun importCsv(text: String) {
@@ -183,8 +247,13 @@ class MoneyBuddyViewModel(
 
     private companion object {
         const val KEY_DEMO_SEEDED = "demo_seeded"
+        const val KEY_CATEGORIES_SEEDED = "categories_seeded"
         const val KEY_BALANCE = "imported_balance_pence"
         const val KEY_BALANCE_DATE = "imported_balance_date"
+        const val KEY_PERIOD_GRAIN = "period_grain"
+        const val KEY_PERIOD_ROLLING = "period_rolling"
+        const val KEY_PERIOD_START = "period_custom_start"
+        const val KEY_PERIOD_END = "period_custom_end"
     }
 }
 
@@ -192,11 +261,12 @@ data class ImportedBalance(val pence: Long, val date: String)
 
 class MoneyBuddyViewModelFactory(
     private val dao: TransactionDao,
+    private val categoryDao: CategoryDao,
     private val prefs: SharedPreferences,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        MoneyBuddyViewModel(dao, prefs) as T
+        MoneyBuddyViewModel(dao, categoryDao, prefs) as T
 }
 
 @Composable
@@ -234,6 +304,8 @@ fun MoneyBuddyApp(
 ) {
     val transactions by viewModel.transactions.collectAsState()
     val summary by viewModel.summary.collectAsState()
+    val spending by viewModel.spending.collectAsState()
+    val categories by viewModel.categories.collectAsState()
     val importedBalance by viewModel.importedBalance.collectAsState()
     val importMessage by viewModel.importMessage.collectAsState()
     var selectedScreen by remember { mutableStateOf("Home") }
@@ -243,6 +315,8 @@ fun MoneyBuddyApp(
     val screenState = ScreenState(
         transactions = transactions,
         summary = summary,
+        spending = spending,
+        categories = categories,
         importedBalance = importedBalance,
         importMessage = importMessage,
         isDarkTheme = isDarkTheme,
@@ -253,6 +327,9 @@ fun MoneyBuddyApp(
         onDeleteAll = viewModel::deleteAllLocalData,
         chartHidden = chartRequest != null,
         onOpenChart = { chartRequest = it },
+        onPeriodChange = viewModel::setPeriod,
+        onSaveCategory = viewModel::saveCategory,
+        onDeleteCategory = viewModel::deleteCategory,
     )
 
     BoxWithConstraints(
@@ -332,6 +409,8 @@ fun MoneyBuddyApp(
 private class ScreenState(
     val transactions: List<Transaction>,
     val summary: MonthSummary,
+    val spending: PeriodSpending,
+    val categories: List<Category>,
     val importedBalance: ImportedBalance?,
     val importMessage: String?,
     val isDarkTheme: Boolean,
@@ -342,6 +421,9 @@ private class ScreenState(
     val onDeleteAll: () -> Unit,
     val chartHidden: Boolean,
     val onOpenChart: (ChartRequest) -> Unit,
+    val onPeriodChange: (SpendingPeriod) -> Unit,
+    val onSaveCategory: (original: String?, name: String, colorArgb: Long) -> String?,
+    val onDeleteCategory: (String) -> Unit,
 )
 
 @Composable
@@ -351,23 +433,22 @@ private fun ScreenContent(
     modifier: Modifier = Modifier,
 ) {
     when (selectedScreen) {
-        "Home" -> DashboardScreen(
-            state.transactions, state.summary, state.importedBalance, state.chartHidden, state.onOpenChart, modifier,
+        "Home" -> DashboardScreen(state, modifier)
+        "Transactions" -> TransactionsScreen(
+            state.transactions, state.categories, state.onTransactionUpdated, modifier,
         )
-        "Transactions" -> TransactionsScreen(state.transactions, state.onTransactionUpdated, modifier)
         else -> SettingsScreen(state, modifier)
     }
 }
 
 @Composable
 private fun DashboardScreen(
-    transactions: List<Transaction>,
-    summary: MonthSummary,
-    importedBalance: ImportedBalance?,
-    chartHidden: Boolean,
-    onOpenChart: (ChartRequest) -> Unit,
+    state: ScreenState,
     modifier: Modifier = Modifier,
 ) {
+    val transactions = state.transactions
+    val summary = state.summary
+    val importedBalance = state.importedBalance
     val hasDemo = transactions.any { it.isDemo }
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = 28.dp),
@@ -406,7 +487,14 @@ private fun DashboardScreen(
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                SpendingCard(summary, chartHidden, onOpenChart, Modifier.weight(1f))
+                SpendingCard(
+                    spending = state.spending,
+                    categories = state.categories,
+                    hidden = state.chartHidden,
+                    onOpen = state.onOpenChart,
+                    onPeriodChange = state.onPeriodChange,
+                    modifier = Modifier.weight(1f),
+                )
                 UpcomingPaymentsCard(Modifier.weight(1f))
             }
         }
@@ -467,6 +555,7 @@ private fun UpcomingPaymentsCard(modifier: Modifier) {
 @Composable
 private fun TransactionsScreen(
     transactions: List<Transaction>,
+    categories: List<Category>,
     onTransactionUpdated: (Transaction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -489,7 +578,9 @@ private fun TransactionsScreen(
     Column(modifier.fillMaxSize().padding(horizontal = 28.dp)) {
         Text("Transactions", Modifier.padding(top = 28.dp),
             style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("All local demonstration transactions", color = Orange,
+        Text(
+            if (transactions.any { it.isDemo }) "Demo transactions" else "Imported from a bank CSV",
+            color = Orange,
             style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 5.dp))
         OutlinedTextField(
             value = searchText,
@@ -514,7 +605,7 @@ private fun TransactionsScreen(
             modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(listOf("All") + transactionCategories) { category ->
+            items(listOf("All") + categories.map { it.name }) { category ->
                 AssistChip(
                     onClick = { categoryFilter = category },
                     label = { Text(if (category == categoryFilter) "✓ $category" else category) },
@@ -534,6 +625,7 @@ private fun TransactionsScreen(
     selectedTransaction?.let { transaction ->
         TransactionEditorDialog(
             transaction = transaction,
+            categoryNames = categories.map { it.name },
             onDismiss = { selectedTransaction = null },
             onSave = {
                 onTransactionUpdated(it)
@@ -570,6 +662,7 @@ private fun TransactionRow(transaction: Transaction, onClick: (() -> Unit)? = nu
 @Composable
 private fun TransactionEditorDialog(
     transaction: Transaction,
+    categoryNames: List<String>,
     onDismiss: () -> Unit,
     onSave: (Transaction) -> Unit,
 ) {
@@ -598,7 +691,8 @@ private fun TransactionEditorDialog(
                         expanded = categoryMenuOpen,
                         onDismissRequest = { categoryMenuOpen = false },
                     ) {
-                        transactionCategories.forEach { option ->
+                        // A transaction whose category is not in the list (for example money in) keeps its own.
+                        (categoryNames + transaction.category).distinct().forEach { option ->
                             DropdownMenuItem(
                                 text = { Text(option) },
                                 onClick = {
@@ -693,6 +787,8 @@ private fun SettingsScreen(
                 }
             }
         }
+        Spacer(Modifier.height(14.dp))
+        CategoriesCard(state.categories, state.transactions, state.onSaveCategory, state.onDeleteCategory)
         Spacer(Modifier.height(14.dp))
         Text("Appearance", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Row(
