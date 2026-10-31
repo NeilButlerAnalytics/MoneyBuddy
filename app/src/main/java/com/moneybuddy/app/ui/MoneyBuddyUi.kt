@@ -1,12 +1,19 @@
 package com.moneybuddy.app.ui
 
 import android.content.SharedPreferences
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -67,6 +74,7 @@ import com.moneybuddy.app.data.Transaction
 import com.moneybuddy.app.data.TransactionDao
 import com.moneybuddy.app.data.demoTransactions
 import com.moneybuddy.app.data.parseBankCsv
+import com.moneybuddy.app.data.paymentTypeLabel
 import com.moneybuddy.app.data.summariseLatestMonth
 import java.text.NumberFormat
 import java.util.Locale
@@ -84,7 +92,7 @@ private val Orange = Color(0xFFF28C28)
 private val Green = Color(0xFF39B978)
 private val Red = Color(0xFFE56B6F)
 
-private val transactionCategories = listOf(
+internal val transactionCategories = listOf(
     "Groceries", "Shopping", "Fuel", "Transport", "Utilities", "Mortgage / Rent",
     "Insurance", "Eating out", "Entertainment", "Subscriptions", "Family", "Holidays", "Other",
 )
@@ -229,6 +237,9 @@ fun MoneyBuddyApp(
     val importedBalance by viewModel.importedBalance.collectAsState()
     val importMessage by viewModel.importMessage.collectAsState()
     var selectedScreen by remember { mutableStateOf("Home") }
+    var chartRequest by remember { mutableStateOf<ChartRequest?>(null) }
+    val chartProgress = remember { Animatable(0f) }
+    var rootOffset by remember { mutableStateOf(Offset.Zero) }
     val screenState = ScreenState(
         transactions = transactions,
         summary = summary,
@@ -240,10 +251,29 @@ fun MoneyBuddyApp(
         onImportCsv = viewModel::importCsv,
         onImportProblem = viewModel::reportImportProblem,
         onDeleteAll = viewModel::deleteAllLocalData,
+        chartHidden = chartRequest != null,
+        onOpenChart = { chartRequest = it },
     )
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .onGloballyPositioned { rootOffset = it.positionInRoot() },
+    ) {
         val compact = maxWidth < 600.dp
+        // The whole app blurs behind the chart overlay. The blur only exists on Android 12 and later; older
+        // versions still get the dimmed backdrop.
+        Box(
+            Modifier.fillMaxSize().graphicsLayer {
+                val radius = chartProgress.value * 24.dp.toPx()
+                renderEffect = if (radius > 0.5f && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    BlurEffect(radius, radius, TileMode.Clamp)
+                } else {
+                    null
+                }
+            },
+        ) {
         if (compact) {
             Column(Modifier.fillMaxSize()) {
                 ScreenContent(selectedScreen, screenState, Modifier.weight(1f))
@@ -287,6 +317,15 @@ fun MoneyBuddyApp(
                 ScreenContent(selectedScreen, screenState)
             }
         }
+        }
+        chartRequest?.let { request ->
+            SpendingChartOverlay(
+                request = request,
+                origin = request.origin.translate(-rootOffset),
+                progress = chartProgress,
+                onClosed = { chartRequest = null },
+            )
+        }
     }
 }
 
@@ -301,6 +340,8 @@ private class ScreenState(
     val onImportCsv: (String) -> Unit,
     val onImportProblem: (String) -> Unit,
     val onDeleteAll: () -> Unit,
+    val chartHidden: Boolean,
+    val onOpenChart: (ChartRequest) -> Unit,
 )
 
 @Composable
@@ -310,7 +351,9 @@ private fun ScreenContent(
     modifier: Modifier = Modifier,
 ) {
     when (selectedScreen) {
-        "Home" -> DashboardScreen(state.transactions, state.summary, state.importedBalance, modifier)
+        "Home" -> DashboardScreen(
+            state.transactions, state.summary, state.importedBalance, state.chartHidden, state.onOpenChart, modifier,
+        )
         "Transactions" -> TransactionsScreen(state.transactions, state.onTransactionUpdated, modifier)
         else -> SettingsScreen(state, modifier)
     }
@@ -321,6 +364,8 @@ private fun DashboardScreen(
     transactions: List<Transaction>,
     summary: MonthSummary,
     importedBalance: ImportedBalance?,
+    chartHidden: Boolean,
+    onOpenChart: (ChartRequest) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val hasDemo = transactions.any { it.isDemo }
@@ -361,7 +406,7 @@ private fun DashboardScreen(
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                SpendingCard(summary.transactions, Modifier.weight(1f))
+                SpendingCard(summary, chartHidden, onOpenChart, Modifier.weight(1f))
                 UpcomingPaymentsCard(Modifier.weight(1f))
             }
         }
@@ -391,43 +436,6 @@ private fun SummaryCard(
             Spacer(Modifier.height(4.dp))
             Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
-@Composable
-private fun SpendingCard(transactions: List<Transaction>, modifier: Modifier) {
-    val categories = transactions.filter { it.amountPence < 0 }
-        .groupBy { it.category }.mapValues { (_, values) -> values.sumOf { -it.amountPence } }
-        .toList().sortedByDescending { it.second }.take(5)
-    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.padding(20.dp)) {
-            Text("Spending breakdown", style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Canvas(Modifier.size(128.dp).padding(10.dp)) {
-                    val total = categories.sumOf { it.second }.toFloat().coerceAtLeast(1f)
-                    var start = -90f
-                    categories.forEachIndexed { index, item ->
-                        val sweep = item.second / total * 360f
-                        drawArc(
-                            color = listOf(Orange, Green, Color(0xFF7C83FD), Color(0xFFE5989B), Color(0xFF6BCBCA))[index % 5],
-                            startAngle = start, sweepAngle = sweep, useCenter = false,
-                            style = Stroke(width = 22.dp.toPx()),
-                        )
-                        start += sweep
-                    }
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    categories.forEach { (category, amount) ->
-                        Text("$category  ${formatPounds(amount)}",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
         }
     }
 }
@@ -545,7 +553,8 @@ private fun TransactionRow(transaction: Transaction, onClick: (() -> Unit)? = nu
     ) {
         Column(Modifier.weight(1f)) {
             Text(transaction.merchant, fontWeight = FontWeight.SemiBold)
-            Text("${transaction.date} · ${transaction.category}",
+            Text("${transaction.date} · ${transaction.category}" +
+                    if (transaction.type.isNotBlank()) " · ${paymentTypeLabel(transaction.type)}" else "",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall)
         }
@@ -576,6 +585,10 @@ private fun TransactionEditorDialog(
                 Text(transaction.merchant, fontWeight = FontWeight.Bold)
                 Text("${transaction.date} · ${formatPounds(transaction.amountPence)}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (transaction.type.isNotBlank()) {
+                    Text("Payment type: ${paymentTypeLabel(transaction.type)}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Box {
                     AssistChip(
                         onClick = { categoryMenuOpen = true },
@@ -722,5 +735,5 @@ private fun SettingsScreen(
 
 private const val MAX_IMPORT_CHARS = 5_000_000
 
-private fun formatPounds(pence: Long): String =
+internal fun formatPounds(pence: Long): String =
     NumberFormat.getCurrencyInstance(Locale.UK).format(pence / 100.0)

@@ -12,7 +12,24 @@ data class Transaction(
     val amountPence: Long,
     val note: String = "",
     val isDemo: Boolean = true,
+    // The bank's payment-type code (for example DD or VIS) where the statement provides one.
+    val type: String = "",
 )
+
+/** Plain-English names for HSBC UK payment-type codes. Unknown codes are shown as they appear. */
+fun paymentTypeLabel(code: String): String = when (code.trim().uppercase()) {
+    ")))" -> "Contactless"
+    "VIS" -> "Visa debit card"
+    "DD" -> "Direct debit"
+    "SO" -> "Standing order"
+    "CR" -> "Credit"
+    "TFR" -> "Transfer"
+    "BP" -> "Bill payment"
+    "ATM" -> "Cash machine"
+    "VRP" -> "Variable recurring payment"
+    "OBP" -> "Open Banking payment"
+    else -> code.trim()
+}
 
 val demoTransactions = listOf(
     Transaction("1", "Salary", "2026-10-28", "Income", 285000),

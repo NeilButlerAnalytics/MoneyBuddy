@@ -32,7 +32,11 @@ private class Columns(
     val paidOut: Int?,
     val paidIn: Int?,
     val balance: Int?,
-)
+    val type: Int? = null,
+) {
+    /** A row with fewer cells than this is a summary line (such as an overdraft limit), not a transaction. */
+    val requiredWidth: Int = listOfNotNull(date, description, amount, paidOut, paidIn).max() + 1
+}
 
 private val dateFormats = listOf(
     "d/M/uuuu", "uuuu-MM-dd", "d-M-uuuu", "d MMM uuuu", "d/M/uu", "uuuu/MM/dd",
@@ -65,7 +69,13 @@ fun parseBankCsv(text: String): ParsedStatement {
         )
     }
 
-    class Entry(val date: String, val pence: Long, val description: String, val balance: Long?)
+    class Entry(
+        val date: String,
+        val pence: Long,
+        val description: String,
+        val balance: Long?,
+        val type: String,
+    )
 
     var skipped = 0
     val entries = mutableListOf<Entry>()
@@ -73,12 +83,14 @@ fun parseBankCsv(text: String): ParsedStatement {
         val date = parseDate(row.getOrNull(columns.date))
         val pence = rowAmount(row, columns)
         if (date == null || pence == null) {
-            skipped += 1
+            // Short lines such as "Arranged overdraft limit,2026-10-31,+£100.00" are not transactions.
+            if (row.size >= columns.requiredWidth) skipped += 1
             continue
         }
-        val description = row.getOrNull(columns.description).orEmpty().trim().replace(Regex("\\s+"), " ")
+        val description = cleanDescription(row.getOrNull(columns.description).orEmpty())
         val balance = columns.balance?.let { parsePence(row.getOrNull(it)) }
-        entries += Entry(date, pence, description, balance)
+        val type = columns.type?.let { row.getOrNull(it) }.orEmpty().trim()
+        entries += Entry(date, pence, description, balance, type)
     }
 
     val occurrences = HashMap<String, Int>()
@@ -92,6 +104,7 @@ fun parseBankCsv(text: String): ParsedStatement {
             category = if (entry.pence > 0) "Income" else "Other",
             amountPence = entry.pence,
             isDemo = false,
+            type = entry.type,
         )
     }
 
@@ -166,9 +179,13 @@ internal fun readCsvRows(text: String): List<List<String>> {
 private fun normaliseHeader(header: String): String =
     header.lowercase(Locale.UK)
         .replace(Regex("\\(.*?\\)"), "")
-        .replace(Regex("[^a-z ]"), "")
+        .replace(Regex("[^a-z ]"), " ")
         .replace(Regex("\\s+"), " ")
         .trim()
+
+/** Collapses runs of spaces and removes the "****" masking some banks add to card payment descriptions. */
+internal fun cleanDescription(raw: String): String =
+    raw.replace(Regex("\\*{2,}"), " ").replace(Regex("\\s+"), " ").trim()
 
 private fun findColumns(header: List<String>): Columns? {
     val names = header.map(::normaliseHeader)
@@ -177,13 +194,19 @@ private fun findColumns(header: List<String>): Columns? {
 
     val date = first("date", "transaction date", "posting date", "booking date") ?: return null
     val description = first(
-        "name", "merchant", "payee", "description", "details", "transaction description", "narrative",
+        "name", "merchant", "payee", "merchant description", "description", "details",
+        "transaction description", "narrative",
     ) ?: return null
-    val amount = first("amount", "value")
+    // HSBC's "Debit/Credit" is one signed amount column (-£3.85 / +£2850.00).
+    val amount = first("amount", "value", "debit credit")
     val paidOut = first("paid out", "money out", "debit", "debit amount", "withdrawals")
     val paidIn = first("paid in", "money in", "credit", "credit amount", "deposits")
     if (amount == null && paidOut == null && paidIn == null) return null
-    return Columns(date, description, amount, paidOut, paidIn, first("balance", "running balance"))
+    return Columns(
+        date, description, amount, paidOut, paidIn,
+        balance = first("balance", "running balance"),
+        type = first("type", "transaction type"),
+    )
 }
 
 private fun rowAmount(row: List<String>, columns: Columns): Long? {

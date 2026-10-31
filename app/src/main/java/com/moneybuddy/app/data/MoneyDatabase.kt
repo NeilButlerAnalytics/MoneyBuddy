@@ -8,6 +8,8 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -35,12 +37,21 @@ interface TransactionDao {
     suspend fun count(): Int
 }
 
-@Database(entities = [Transaction::class], version = 1, exportSchema = false)
+@Database(entities = [Transaction::class], version = 2, exportSchema = false)
 abstract class MoneyDatabase : RoomDatabase() {
     abstract fun transactionDao(): TransactionDao
 
     companion object {
+        // Version 2 adds the bank's payment-type code. Existing transactions keep an empty type.
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN type TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun create(context: Context): MoneyDatabase =
-            Room.databaseBuilder(context, MoneyDatabase::class.java, "moneybuddy.db").build()
+            Room.databaseBuilder(context, MoneyDatabase::class.java, "moneybuddy.db")
+                .addMigrations(MIGRATION_1_2)
+                .build()
     }
 }

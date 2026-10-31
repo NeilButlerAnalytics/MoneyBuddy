@@ -162,6 +162,36 @@ Still open: a live connection (needs a UK-capable provider, see
 [STAGE3-OPEN-BANKING.md](./STAGE3-OPEN-BANKING.md)), connection status and last
 sync display, and a Monzo option.
 
+## Spending chart and HSBC MiData import (31 October 2026)
+
+**Status: Implemented and installed on the tablet; awaiting review**
+
+Interactive spending chart:
+
+- The donut is larger and thicker, with a gap before the legend and a colour
+  swatch per category.
+- Tapping a section blurs the screen behind (Android 12+; older versions get a
+  dimmed backdrop), grows the chart out of its card, detaches and enlarges the
+  chosen section, and lists that category's transactions beside it (merchant,
+  date, payment type, note, amount and share of the category).
+- Tapping another section switches the details with an animation. Tapping the
+  blurred background, or Back, returns the chart to its card.
+- Code: `ui/SpendingChart.kt`, tap detection covered by `SpendingChartTest`.
+
+HSBC MiData export (`Date, Type, Merchant/Description, Debit/Credit, Balance`):
+
+- A real export (1,398 transactions, Oct 2025 to Sep 2026) parses with no
+  skipped rows, no duplicate ids and the correct closing balance. The file's
+  running balance reconciles exactly, so nothing is missing from the export.
+- Fixed: headings containing a slash were not recognised; `+£` / `-£` amounts;
+  the trailing "Arranged overdraft limit" line is ignored; `****` masking is
+  removed from descriptions.
+- New: the Type column (contactless, direct debit, standing order and so on) is
+  now stored and shown. This needed a database upgrade (version 2).
+- The file has no categories, no time of day, no account name and no reference,
+  so every imported spend is "Other" until Stage 4 (automatic categorisation).
+  Own-account transfers (`TFR`) also count as spending and income until Stage 4.
+
 ## Next checkpoint
 
 The next action is to use Enable Banking's Control Panel to confirm HSBC UK

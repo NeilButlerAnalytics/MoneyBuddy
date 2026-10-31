@@ -9,6 +9,35 @@ import org.junit.Test
 
 class BankCsvImporterTest {
     @Test
+    fun parsesHsbcMiDataExportLayout() {
+        val pound = "\u00A3"
+        val csv = "\uFEFFDate,Type,Merchant/Description,Debit/Credit,Balance\r\n" +
+            "2026-09-30,))),SAMPLE SUPERMARKET TOWN ****,-${pound}3.85,+${pound}2584.16\r\n" +
+            "2026-09-29,DD,SAMPLE   ENERGY CO,-${pound}124.00,+${pound}2588.01\r\n" +
+            "2026-09-28,CR,SAMPLE EMPLOYER LTD,+${pound}2850.00,+${pound}2712.01\r\n" +
+            "Arranged overdraft limit,2026-10-31,+${pound}100.00\r\n"
+
+        val statement = parseBankCsv(csv)
+
+        assertEquals(3, statement.transactions.size)
+        assertEquals(0, statement.skippedRows)
+        assertEquals(listOf(-385L, -12400L, 285000L), statement.transactions.map { it.amountPence })
+        assertEquals("SAMPLE SUPERMARKET TOWN", statement.transactions[0].merchant)
+        assertEquals("SAMPLE ENERGY CO", statement.transactions[1].merchant)
+        assertEquals(listOf(")))", "DD", "CR"), statement.transactions.map { it.type })
+        assertEquals("Income", statement.transactions[2].category)
+        assertEquals(258416L, statement.latestBalancePence)
+        assertEquals("2026-09-30", statement.latestBalanceDate)
+    }
+
+    @Test
+    fun paymentTypeCodesGetPlainEnglishNames() {
+        assertEquals("Contactless", paymentTypeLabel(")))"))
+        assertEquals("Direct debit", paymentTypeLabel("DD"))
+        assertEquals("XYZ", paymentTypeLabel("XYZ"))
+    }
+
+    @Test
     fun parsesPaidOutPaidInStatementWithHeader() {
         val csv = """
             Date,Type,Description,Paid out,Paid in,Balance
