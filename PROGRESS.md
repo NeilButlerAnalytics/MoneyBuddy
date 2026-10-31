@@ -164,6 +164,11 @@ and pricing must be confirmed before using a real account.
 For a complete restart checklist, see
 [HANDOFF-2026-10-31.md](./HANDOFF-2026-10-31.md).
 
+Update (31 October 2026): Enable Banking does not cover the UK, so it cannot
+connect to HSBC UK. Alternatives and costs are in
+[STAGE3-OPEN-BANKING.md](./STAGE3-OPEN-BANKING.md). A provider decision is
+needed before more Stage 3 work.
+
 A Cloudflare Worker has also been created at
 `https://moneybuddy-api.neil-butler-1981.workers.dev/`. Its source is in
 `worker/`; it needs the Production Enable Banking secrets before deployment.

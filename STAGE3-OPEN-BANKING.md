@@ -1,6 +1,28 @@
 # Stage 3 — HSBC Open Banking investigation
 
-Last updated: 30 October 2026
+Last updated: 31 October 2026
+
+## Update: Enable Banking does not cover the UK
+
+Enable Banking's official market list (https://enablebanking.com/docs/markets/)
+covers EU/EEA countries only. The United Kingdom is not listed, and the sandbox
+application reported no `GB` country. Enable Banking therefore cannot connect
+to HSBC UK. Do not create a Production Enable Banking application.
+
+Alternatives investigated (31 October 2026):
+
+| Option | UK / HSBC | Cost for a personal hobby project |
+|---|---|---|
+| Plaid | UK supported | UK/EU customers are offered Custom plans only; the free Trial plan is US/Canada only. Not suitable. |
+| TrueLayer | UK supported | Data API is an add-on to a Payments product; pricing not public; live access appears to be sales-led. Unconfirmed. |
+| GoCardless Bank Account Data | UK entity (GoCardless Ltd) is the AISP | Historically free for low volume, but current free tier and whether new sign-ups are open could not be verified. Rate limit can be 4 calls/day/account. |
+| Finexer | UK banks only | Pricing page shows plans without figures; sandbox free; says personal accounts may work "in certain cases". Unconfirmed. |
+| Salt Edge | UK covered | Pricing not public; business oriented. Unconfirmed. |
+| Yapily | UK supported | Pricing not public; Yapily Connect is business oriented. Unconfirmed. |
+| Manual CSV/OFX export from HSBC online banking, imported into MoneyBuddy | Works for HSBC UK (HSBC help page could not be fetched, so confirm the formats available) | Free. No hosting, no consent renewal. Manual rather than live. |
+
+The Cloudflare Worker in `worker/` is currently written for Enable Banking and
+would need adapting to whichever provider is chosen.
 
 ## Scope
 
