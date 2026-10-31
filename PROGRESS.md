@@ -225,6 +225,44 @@ Categories (Settings, Categories):
   database logic and unit-tested name rules but were not exercised on the
   tablet.
 
+## HSBC TransactionHistory import and merging two exports (31 October 2026)
+
+**Status: Implemented, unit tested against real files, installed on the tablet; awaiting a real import on the tablet**
+
+HSBC's two downloads differ, and the app now reads both:
+
+- **MiData** (`Date, Type, Merchant/Description, Debit/Credit, Balance`): has
+  a balance, but HSBC masks parts of the text. Store numbers become `****` and
+  transfers, standing orders and credits arrive as a row of asterisks, with the
+  payee and reference hidden. In the 12-month file, 405 of 1,398 transactions
+  have a fully hidden description. These are now labelled "Hidden by bank"
+  (they were being shown as "Unknown").
+- **TransactionHistory** (no header: date, description, amount): the full,
+  unmasked text, but no balance and no separate type column. The payment-type
+  code on the end of the description (`VIS`, `)))`, `DD`, `TFR`, ...) is split
+  off into the type. Only known codes are split, so names ending in "LTD" are
+  untouched.
+
+Merging (`ImportPlanner.kt`):
+
+- A row is already stored when the same day, amount and payment type are
+  already there, whatever the wording, so importing both files does not double
+  count. Identical same-day payments are counted, so two real £3.00 coffees
+  stay two.
+- Where a stored description is hidden and the match is unambiguous, the
+  readable description from the other file is filled in. Categories and notes
+  are never changed.
+- Checked on the real files, MiData then TransactionHistory: 97 new rows added
+  (the October transactions), the 33 overlapping rows recognised as already
+  present, 10 hidden descriptions filled in, and re-importing either file adds
+  nothing.
+- Existing rows already stored as "Unknown" are relabelled "Hidden by bank" the
+  next time that MiData file is imported (nothing is duplicated).
+- The balance card shows an **Estimated balance** (last known balance plus the
+  transactions since) when a later file has no balance column.
+- Limitation: one account per app. Two accounts with a payment of the same
+  amount and type on the same day would be treated as one.
+
 ## Next checkpoint
 
 The next action is to use Enable Banking's Control Panel to confirm HSBC UK

@@ -80,6 +80,8 @@ import com.moneybuddy.app.data.Transaction
 import com.moneybuddy.app.data.TransactionDao
 import com.moneybuddy.app.data.defaultCategories
 import com.moneybuddy.app.data.demoTransactions
+import com.moneybuddy.app.data.formatDay
+import com.moneybuddy.app.data.planImport
 import com.moneybuddy.app.data.parseBankCsv
 import com.moneybuddy.app.data.paymentTypeLabel
 import com.moneybuddy.app.data.summariseLatestMonth
@@ -198,12 +200,17 @@ class MoneyBuddyViewModel(
                 if (statement.transactions.isEmpty()) {
                     "No transactions were found in that file."
                 } else {
-                    val added = dao.insertIgnoring(statement.transactions).count { it != -1L }
+                    val incoming = statement.transactions
+                    val existing = dao.between(incoming.minOf { it.date }, incoming.maxOf { it.date })
+                    val plan = planImport(existing, incoming)
+                    val added = dao.insertIgnoring(plan.toInsert).count { it != -1L }
+                    // Existing rows keep their id, category and note; only the description changes.
+                    dao.insertAll(plan.toUpdate)
                     dao.deleteDemo()
                     saveImportedBalance(statement)
-                    val duplicates = statement.transactions.size - added
                     "Imported $added new transactions" +
-                        (if (duplicates > 0) ", $duplicates already imported" else "") +
+                        (if (plan.alreadyPresent > 0) ", ${plan.alreadyPresent} already imported" else "") +
+                        (if (plan.toUpdate.isNotEmpty()) ", ${plan.toUpdate.size} descriptions improved" else "") +
                         (if (statement.skippedRows > 0) ", ${statement.skippedRows} unreadable rows skipped" else "") +
                         "."
                 }
@@ -475,8 +482,19 @@ private fun DashboardScreen(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (importedBalance != null) {
-                    SummaryCard("Balance at last import", importedBalance.pence, "As of ${importedBalance.date}",
-                        Modifier.weight(1.2f))
+                    // A later file without a balance column (HSBC's TransactionHistory) moves the balance on.
+                    val later = transactions.filter { it.date > importedBalance.date }
+                    if (later.isEmpty()) {
+                        SummaryCard("Balance at last import", importedBalance.pence, "As of ${formatDay(importedBalance.date)}",
+                            Modifier.weight(1.2f))
+                    } else {
+                        SummaryCard(
+                            "Estimated balance",
+                            importedBalance.pence + later.sumOf { it.amountPence },
+                            "Balance on ${formatDay(importedBalance.date)} plus ${later.size} later transactions",
+                            Modifier.weight(1.2f),
+                        )
+                    }
                 } else {
                     SummaryCard("Month balance", summary.income - summary.spending, "Income less spending",
                         Modifier.weight(1.2f))

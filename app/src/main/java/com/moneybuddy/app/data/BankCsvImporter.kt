@@ -87,9 +87,20 @@ fun parseBankCsv(text: String): ParsedStatement {
             if (row.size >= columns.requiredWidth) skipped += 1
             continue
         }
-        val description = cleanDescription(row.getOrNull(columns.description).orEmpty())
+        val rawDescription = row.getOrNull(columns.description).orEmpty()
+        var type = columns.type?.let { row.getOrNull(it) }.orEmpty().trim()
+        var description = rawDescription
+        if (columns.type == null) {
+            // Without a Type column HSBC puts the code on the end of the description ("... TESCO STORES )))").
+            splitTrailingTypeCode(rawDescription)?.let { (rest, code) ->
+                description = rest
+                type = code
+            }
+        }
+        description = cleanDescription(description)
+        // A description that is nothing but asterisks has been hidden by the bank, which is not the same as missing.
+        if (description.isEmpty() && rawDescription.isNotBlank()) description = MASKED_DESCRIPTION
         val balance = columns.balance?.let { parsePence(row.getOrNull(it)) }
-        val type = columns.type?.let { row.getOrNull(it) }.orEmpty().trim()
         entries += Entry(date, pence, description, balance, type)
     }
 
@@ -186,6 +197,19 @@ private fun normaliseHeader(header: String): String =
 /** Collapses runs of spaces and removes the "****" masking some banks add to card payment descriptions. */
 internal fun cleanDescription(raw: String): String =
     raw.replace(Regex("\\*{2,}"), " ").replace(Regex("\\s+"), " ").trim()
+
+/** Shown when the bank has replaced a whole description with asterisks (HSBC does this for transfers and credits). */
+const val MASKED_DESCRIPTION = "Hidden by bank"
+
+// Only these are treated as payment-type codes, so a name that happens to end in capitals ("ACME LTD") is left alone.
+private val knownTypeCodes = listOf("VIS", "DD", "SO", "CR", "TFR", "BP", "ATM", "VRP", "OBP", "DR", "CHQ", "CIR", "MAE")
+private val trailingTypeCode = Regex("^(.*\\S)\\s+(\\)\\)\\)|${knownTypeCodes.joinToString("|")})$")
+
+/** Splits "TESCO STORES LANCASHIRE )))" into the description and the type code, or returns null if there is none. */
+internal fun splitTrailingTypeCode(raw: String): Pair<String, String>? {
+    val match = trailingTypeCode.matchEntire(raw.trim()) ?: return null
+    return match.groupValues[1] to match.groupValues[2]
+}
 
 private fun findColumns(header: List<String>): Columns? {
     val names = header.map(::normaliseHeader)

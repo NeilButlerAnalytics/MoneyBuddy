@@ -27,6 +27,9 @@ interface TransactionDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIgnoring(transactions: List<Transaction>): List<Long>
 
+    @Query("SELECT * FROM transactions WHERE date BETWEEN :from AND :to")
+    suspend fun between(from: String, to: String): List<Transaction>
+
     @Query("DELETE FROM transactions WHERE isDemo = 1")
     suspend fun deleteDemo()
 

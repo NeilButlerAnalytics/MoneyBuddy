@@ -31,6 +31,42 @@ class BankCsvImporterTest {
     }
 
     @Test
+    fun parsesHsbcTransactionHistoryLayoutWithNoHeaderAndTheTypeOnTheDescription() {
+        val csv = "30/10/2026,SAMPLE CAR PARK TOWN VIS,-2.40\r\n" +
+            "28/10/2026,SAMPLE   SHOP YORK ))),-6.55\r\n" +
+            "27/10/2026,SAMPLE PERSON NAME CR,\"1,250.00\"\r\n" +
+            "26/10/2026,ACME LTD,-5.00\r\n"
+
+        val statement = parseBankCsv(csv)
+
+        assertEquals(4, statement.transactions.size)
+        assertEquals(0, statement.skippedRows)
+        assertEquals(listOf(-240L, -655L, 125000L, -500L), statement.transactions.map { it.amountPence })
+        assertEquals(
+            listOf("SAMPLE CAR PARK TOWN", "SAMPLE SHOP YORK", "SAMPLE PERSON NAME", "ACME LTD"),
+            statement.transactions.map { it.merchant },
+        )
+        // "LTD" is part of a name, not a payment type.
+        assertEquals(listOf("VIS", ")))", "CR", ""), statement.transactions.map { it.type })
+        assertEquals("2026-10-30", statement.transactions[0].date)
+        assertNull(statement.latestBalancePence)
+    }
+
+    @Test
+    fun aDescriptionHiddenByAsterisksIsLabelledNotLost() {
+        val pound = "\u00A3"
+        val csv = "Date,Type,Merchant/Description,Debit/Credit,Balance\r\n" +
+            "2026-09-29,TFR,************************************,-${pound}68.00,+${pound}100.00\r\n" +
+            "2026-09-28,)))," + "SAMPLE STORE **** TOWN,-${pound}4.00,+${pound}168.00\r\n"
+
+        val statement = parseBankCsv(csv)
+
+        assertEquals(MASKED_DESCRIPTION, statement.transactions[0].merchant)
+        assertEquals("TFR", statement.transactions[0].type)
+        assertEquals("SAMPLE STORE TOWN", statement.transactions[1].merchant)
+    }
+
+    @Test
     fun paymentTypeCodesGetPlainEnglishNames() {
         assertEquals("Contactless", paymentTypeLabel(")))"))
         assertEquals("Direct debit", paymentTypeLabel("DD"))
